@@ -1,0 +1,2 @@
+version=3
+https://github.com/samtools/samtools/tags .*/v?(\d[\d\.]+)\.tar\.gz
