@@ -82,7 +82,7 @@ void bed_destroy(void *_h);
 int bed_overlap(const void *_h, const char *chr, int beg, int end);
 
 typedef struct {
-	int max_mq, min_mq, flag, min_baseQ, capQ_thres, max_depth, max_indel_depth, fmt_flag;
+	int max_mq, min_mq, flag, min_baseQ, capQ_thres, max_depth, max_indel_depth, fmt_flag, num_threads;
     int rflag_require, rflag_filter;
 	int openQ, extQ, tandemQ, min_support; // for indels
 	double min_frac; // for indels
@@ -308,7 +308,7 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 		bca->openQ = conf->openQ, bca->extQ = conf->extQ, bca->tandemQ = conf->tandemQ;
 		bca->min_frac = conf->min_frac;
 		bca->min_support = conf->min_support;
-        bca->per_sample_flt = conf->flag & MPLP_PER_SAMPLE;
+	        bca->per_sample_flt = conf->flag & MPLP_PER_SAMPLE;
 	}
 	if (tid0 >= 0 && conf->fai) { // region is set
 		ref = faidx_fetch_seq(conf->fai, h->target_name[tid0], 0, 0x7fffffff, &ref_len);
@@ -504,6 +504,7 @@ int bam_mpileup(int argc, char *argv[])
 	mplp.openQ = 40; mplp.extQ = 20; mplp.tandemQ = 100;
 	mplp.min_frac = 0.002; mplp.min_support = 1;
 	mplp.flag = MPLP_NO_ORPHAN | MPLP_REALN;
+	mplp.num_threads = 1;
     static struct option lopts[] = 
     {
         {"rf",1,0,1},   // require flag
@@ -541,7 +542,7 @@ int bam_mpileup(int argc, char *argv[])
 		case 'M': mplp.max_mq = atoi(optarg); break;
 		case 'q': mplp.min_mq = atoi(optarg); break;
 		case 'Q': mplp.min_baseQ = atoi(optarg); break;
-        case 'b': file_list = optarg; break;
+	        case 'b': file_list = optarg; break;
 		case 'o': mplp.openQ = atoi(optarg); break;
 		case 'e': mplp.extQ = atoi(optarg); break;
 		case 'h': mplp.tandemQ = atoi(optarg); break;
@@ -560,6 +561,7 @@ int bam_mpileup(int argc, char *argv[])
 				fclose(fp_rg);
 			}
 			break;
+		case 't': mplp.num_threads = atoi(optarg); break;
 		}
 	}
 	if (use_orphan) mplp.flag &= ~MPLP_NO_ORPHAN;
@@ -584,6 +586,7 @@ int bam_mpileup(int argc, char *argv[])
 		fprintf(stderr, "       -Q INT       skip bases with baseQ/BAQ smaller than INT [%d]\n", mplp.min_baseQ);
 		fprintf(stderr, "       --rf INT     required flags: skip reads with mask bits unset []\n");
 		fprintf(stderr, "       --ff INT     filter flags: skip reads with mask bits set []\n");
+		fprintf(stderr, "       -t INT       Number of parallel threads\n");
 		fprintf(stderr, "\nOutput options:\n\n");
 		fprintf(stderr, "       -D           output per-sample DP in BCF (require -g/-u)\n");
 		fprintf(stderr, "       -g           generate BCF output (genotype likelihoods)\n");
