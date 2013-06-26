@@ -511,7 +511,7 @@ int bam_mpileup(int argc, char *argv[])
         {"ff",1,0,2},   // filter flag
         {0,0,0,0}
     };
-	while ((c = getopt_long(argc, argv, "Agf:r:l:M:q:Q:uaRC:BDSd:L:b:P:po:e:h:Im:F:EG:6OsV1:2:",lopts,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "Agf:r:l:M:q:Q:uaRC:BDSd:L:b:P:t:po:e:h:Im:F:EG:6OsV1:2:",lopts,NULL)) >= 0) {
 		switch (c) {
         case  1 : mplp.rflag_require = strtol(optarg,0,0); break;
         case  2 : mplp.rflag_filter  = strtol(optarg,0,0); break;
@@ -609,6 +609,10 @@ int bam_mpileup(int argc, char *argv[])
 		return 1;
 	}
 	bam_no_B = 1;
+	int group_divider (char* filename, int threads);
+	if (mplp.num_threads>1) {
+			group_divider(mplp.fai_fname,mplp.num_threads);
+	}
     if (file_list) {
         if ( read_file_list(file_list,&nfiles,&fn) ) return 1;
         mpileup(&mplp,nfiles,fn);
