@@ -89,6 +89,7 @@ typedef struct {
 	char *reg, *pl_list, *fai_fname;
 	faidx_t *fai;
 	void *bed, *rghash;
+	void ** bed_list;
 } mplp_conf_t;
 
 typedef struct {
@@ -609,9 +610,19 @@ int bam_mpileup(int argc, char *argv[])
 		return 1;
 	}
 	bam_no_B = 1;
-	int group_divider (char* filename, int threads);
+	int group_divider (char* filename, int threads, char*** beds);	//БДЫЩЬ!
 	if (mplp.num_threads>1) {
-			group_divider(mplp.fai_fname,mplp.num_threads);
+			char** beds;
+			int bednum = group_divider(mplp.fai_fname,mplp.num_threads,&beds);
+			fprintf (stderr,"Having %d BEDs\n",bednum);
+			mplp.bed_list = malloc (sizeof(void*) * bednum+1);
+			void** bed_list = mplp.bed_list;
+			while (bednum--){
+//				fprintf (stderr,"Parsing BED %s\n",*beds);
+//				beds++;
+				*bed_list++ = bed_read (*beds++);
+			}
+			bed_list = NULL;	//Closing array
 	}
     if (file_list) {
         if ( read_file_list(file_list,&nfiles,&fn) ) return 1;

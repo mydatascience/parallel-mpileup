@@ -50,6 +50,8 @@ bed_list* beds_array = NULL;
 bed_list* bed_tail;
 void beds_array_add (char* newbed) {
 	bed_list* bed = malloc (sizeof(beds_array));
+	char* bedname = malloc (strlen(newbed)+1);
+	strcpy (bedname,newbed);
 	if (beds_array==NULL) {
 		beds_array = bed;
 		bed_tail = beds_array;
@@ -58,8 +60,9 @@ void beds_array_add (char* newbed) {
 		bed_tail->next = bed;
 		bed_tail = bed_tail->next;
 	}
-	fprintf (stderr,"Adding BED %s...\n", newbed);
-	bed_tail->bed = newbed;
+	bed_tail->bed = bedname;
+	fprintf (stderr,"Added BED %s...\n", bed_tail->bed);
+
 }
 
 int bed_list_count () {
@@ -74,12 +77,12 @@ int bed_list_count () {
 }
 
 char** bed_array_return () {
-	char** result = malloc (sizeof(char*) * 10/*bed_list_count()*/);
+	char** result = malloc (sizeof(char*) * bed_list_count());
 	char** cur = result;
 	bed_list* cbed = beds_array;
 	if (cbed==NULL) fprintf (stderr,"BUG!\n");
 	while (cbed) {
-		*cur++ = cbed->bed;
+		*(cur++) = cbed->bed;
 		fprintf (stderr,"BED is %s!\n", cbed->bed);
 		cbed=cbed->next;
 	}
@@ -106,7 +109,7 @@ void get_chrname(char * chrname, char inbuf[]) {
 	chrname[size] = '\0';
 }
 
-int group_divider (char* filename, int threads, char** beds) {
+int group_divider (char* filename, int threads, char*** beds) {
 	fprintf (stderr,"Group Divider!\n");
 	FILE* finput = NULL;
 	FILE* fbed = NULL;
@@ -220,7 +223,7 @@ int group_divider (char* filename, int threads, char** beds) {
 		flushbed (fbed, chrname,regstart,currpos);
 //		echobed (chrname,regstart,currpos);
     }
-	beds =  bed_array_return ();
-	return 0;
+	*beds =  bed_array_return ();
+	return bed_list_count ();
 }
 	

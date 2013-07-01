@@ -144,6 +144,7 @@ void *bed_read(const char *fn)
 	gzclose(fp);
 	free(str->s); free(str);
 	bed_index(h);
+	fprintf (stderr,"Successfully read BED %s!\n",fn);
 	return h;
 }
 
