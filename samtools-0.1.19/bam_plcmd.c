@@ -187,22 +187,22 @@ static void group_smpl(mplp_pileup_t *m, bam_sample_t *sm, kstring_t *buf,
 }
 
 static void mpileup_kern (
-		mplp_conf_t *conf,
-		int n,
+		mplp_conf_t *conf,	//Config. const
+		mplp_aux_t **data,
+		int n,			//length of data
 		char **fn,
 		bam_mplp_t iter,
 		int tid,
 		int ref_tid,
-		int* n_plp,
-		const bam_pileup1_t **plp,
+//		int* n_plp,
+//		const bam_pileup1_t **plp,
 		int beg0, int end0,
 		bam_header_t *h,
 		char *ref,
 		int ref_len,
-		mplp_aux_t **data,
 		bam_sample_t *sm,
-		mplp_pileup_t gplp,
-		kstring_t buf,
+//		mplp_pileup_t gplp,	//Changed in group_smpl
+//		kstring_t buf,
 		bcf_callaux_t *bca,
 		bcf_callret1_t *bcr,
 		bcf_call_t bc,
@@ -210,7 +210,21 @@ static void mpileup_kern (
 		bcf_hdr_t *bh,
 		int max_indel_depth,
 		void *rghash) {
-	int i, pos;
+	int i, pos /*, *tid*/;
+	int* n_plp;
+	const bam_pileup1_t **plp;
+	mplp_pileup_t gplp;
+	kstring_t buf;		//Filled deeper in group_smpl
+	n_plp = calloc(n, sizeof(int*));
+	plp = calloc(n, sizeof(void*));
+
+	memset(&gplp, 0, sizeof(mplp_pileup_t));
+	gplp.n = sm->n;
+	gplp.n_plp = calloc(sm->n, sizeof(int));
+	gplp.m_plp = calloc(sm->n, sizeof(int));
+	gplp.plp = calloc(sm->n, sizeof(void*));
+
+	memset(&buf, 0, sizeof(kstring_t));
 	while (bam_mplp_auto(iter, &tid, &pos, n_plp, plp) > 0) {
 		if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
 		if (conf->bed && tid >= 0 && !bed_overlap(conf->bed, h->target_name[tid], pos, pos+1)) continue;
@@ -295,6 +309,9 @@ static void mpileup_kern (
 			putchar('\n');
 		}
 	}
+	free(n_plp); free(plp); free(buf.s);
+	for (i = 0; i < gplp.n; ++i) free(gplp.plp[i]);
+	free(gplp.plp); free(gplp.n_plp); free(gplp.m_plp);
 }
 
 static int mpileup(mplp_conf_t *conf, int n, char **fn)
@@ -302,8 +319,8 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 	extern void *bcf_call_add_rg(void *rghash, const char *hdtext, const char *list);
 	extern void bcf_call_del_rghash(void *rghash);
 	mplp_aux_t **data;
-	int i, tid, /*pos,*/ *n_plp, tid0 = -1, beg0 = 0, end0 = 1u<<29, ref_len, ref_tid = -1, max_depth, max_indel_depth;
-	const bam_pileup1_t **plp;
+	int i, tid, /*pos,*/ /**n_plp,*/ tid0 = -1, beg0 = 0, end0 = 1u<<29, ref_len, ref_tid = -1, max_depth, max_indel_depth;
+//	const bam_pileup1_t **plp;
 	bam_mplp_t iter;
 	bam_header_t *h = 0;
 	char *ref;
@@ -316,15 +333,15 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 	bcf_hdr_t *bh = 0;
 
 	bam_sample_t *sm = 0;
-	kstring_t buf;
-	mplp_pileup_t gplp;
+//	kstring_t buf;
+//	mplp_pileup_t gplp;
 
-	memset(&gplp, 0, sizeof(mplp_pileup_t));
-	memset(&buf, 0, sizeof(kstring_t));
+//	memset(&gplp, 0, sizeof(mplp_pileup_t));
+//	memset(&buf, 0, sizeof(kstring_t));
 	memset(&bc, 0, sizeof(bcf_call_t));
 	data = calloc(n, sizeof(void*));
-	plp = calloc(n, sizeof(void*));
-	n_plp = calloc(n, sizeof(int*));
+//	plp = calloc(n, sizeof(void*));
+//	n_plp = calloc(n, sizeof(int*));
 	sm = bam_smpl_init();
 
 	// read the header and initialize data
@@ -368,10 +385,10 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 			bam_header_destroy(h_tmp);
 		}
 	}
-	gplp.n = sm->n;
-	gplp.n_plp = calloc(sm->n, sizeof(int));
-	gplp.m_plp = calloc(sm->n, sizeof(int));
-	gplp.plp = calloc(sm->n, sizeof(void*));
+//	gplp.n = sm->n;
+//	gplp.n_plp = calloc(sm->n, sizeof(int));
+//	gplp.m_plp = calloc(sm->n, sizeof(int));
+//	gplp.plp = calloc(sm->n, sizeof(void*));
 
 	fprintf(stderr, "[%s] %d samples in %d input files\n", __func__, sm->n, n);
 	// write the VCF header
@@ -447,21 +464,21 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 
 	mpileup_kern(
 			conf,
+			data,
 			n,
 			fn,
 			iter,
 			tid,
 			ref_tid,
-			n_plp,
-			plp,
+//			n_plp,
+//			plp,
 			beg0, end0,
 			h,
 			ref,
 			ref_len,
-			data,
 			sm,
-			gplp,
-			buf,
+//			gplp,
+//			buf,
 			bca,
 			bcr,
 			bc,
@@ -471,9 +488,9 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 			rghash);
 
 	bcf_close(bp);
-	bam_smpl_destroy(sm); free(buf.s);
-	for (i = 0; i < gplp.n; ++i) free(gplp.plp[i]);
-	free(gplp.plp); free(gplp.n_plp); free(gplp.m_plp);
+	bam_smpl_destroy(sm); /*free(buf.s);*/
+//	for (i = 0; i < gplp.n; ++i) free(gplp.plp[i]);
+//	free(gplp.plp); free(gplp.n_plp); free(gplp.m_plp);
 	bcf_call_del_rghash(rghash);
 	bcf_hdr_destroy(bh); bcf_call_destroy(bca); free(bc.PL); free(bcr);
 	bam_mplp_destroy(iter);
@@ -483,7 +500,7 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 		if (data[i]->iter) bam_iter_destroy(data[i]->iter);
 		free(data[i]);
 	}
-	free(data); free(plp); free(ref); free(n_plp);
+	free(data); /*free(plp); */free(ref); /*free(n_plp);*/
 	return 0;
 }
 
