@@ -226,8 +226,10 @@ static void mpileup_kern (
 	memset(&buf, 0, sizeof(kstring_t));
 	memset(&bc, 0, sizeof(bcf_call_t));
 	for (thr=0; thr<conf->num_threads; thr++) {
-		conf -> bed = bed_list [thr];
-		fprintf (stderr,"Starting thread #%d\n", thr);
+		if (bed_list!=NULL) {			//Multithreading on
+			conf -> bed = bed_list [thr];
+			fprintf (stderr,"Starting thread #%d\n", thr);
+		}
 		while (bam_mplp_auto(iter, &tid, &pos, n_plp, plp) > 0) {
 			if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
 			if (conf->bed && tid >= 0 && !bed_overlap(conf->bed, h->target_name[tid], pos, pos+1)) continue;
