@@ -186,12 +186,123 @@ static void group_smpl(mplp_pileup_t *m, bam_sample_t *sm, kstring_t *buf,
 	}
 }
 
+static void mpileup_kern (
+		mplp_conf_t *conf,
+		int n,
+		char **fn,
+		bam_mplp_t iter,
+		int tid,
+		int ref_tid,
+		int* n_plp,
+		const bam_pileup1_t **plp,
+		int beg0, int end0,
+		bam_header_t *h,
+		char *ref,
+		int ref_len,
+		mplp_aux_t **data,
+		bam_sample_t *sm,
+		mplp_pileup_t gplp,
+		kstring_t buf,
+		bcf_callaux_t *bca,
+		bcf_callret1_t *bcr,
+		bcf_call_t bc,
+		bcf_t *bp,
+		bcf_hdr_t *bh,
+		int max_indel_depth,
+		void *rghash) {
+	int i, pos;
+	while (bam_mplp_auto(iter, &tid, &pos, n_plp, plp) > 0) {
+		if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
+		if (conf->bed && tid >= 0 && !bed_overlap(conf->bed, h->target_name[tid], pos, pos+1)) continue;
+		if (tid != ref_tid) {
+			free(ref); ref = 0;
+			if (conf->fai) ref = faidx_fetch_seq(conf->fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
+			for (i = 0; i < n; ++i) {
+			  data[i]->ref = ref;
+			  data[i]->ref_id = tid;
+			  data[i]->ref_len = ref_len;
+			}
+			ref_tid = tid;
+		}
+		if (conf->flag & MPLP_GLF) {
+			int total_depth, _ref0, ref16;
+			bcf1_t *b = calloc(1, sizeof(bcf1_t));
+			for (i = total_depth = 0; i < n; ++i) total_depth += n_plp[i];
+			group_smpl(&gplp, sm, &buf, n, fn, n_plp, plp, conf->flag & MPLP_IGNORE_RG);
+			_ref0 = (ref && pos < ref_len)? ref[pos] : 'N';
+			ref16 = bam_nt16_table[_ref0];
+			for (i = 0; i < gplp.n; ++i)
+				bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], ref16, bca, bcr + i);
+			bcf_call_combine(gplp.n, bcr, bca, ref16, &bc);
+			bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, 0, 0);
+			bcf_write(bp, bh, b);
+			bcf_destroy(b);
+			// call indels
+			if (!(conf->flag&MPLP_NO_INDEL) && total_depth < max_indel_depth && bcf_call_gap_prep(gplp.n, gplp.n_plp, gplp.plp, pos, bca, ref, rghash) >= 0) {
+				for (i = 0; i < gplp.n; ++i)
+					bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], -1, bca, bcr + i);
+				if (bcf_call_combine(gplp.n, bcr, bca, -1, &bc) >= 0) {
+					b = calloc(1, sizeof(bcf1_t));
+					bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, bca, ref);
+					bcf_write(bp, bh, b);
+					bcf_destroy(b);
+				}
+			}
+		} else {
+			printf("%s\t%d\t%c", h->target_name[tid], pos + 1, (ref && pos < ref_len)? ref[pos] : 'N');
+			for (i = 0; i < n; ++i) {
+				int j, cnt;
+				for (j = cnt = 0; j < n_plp[i]; ++j) {
+					const bam_pileup1_t *p = plp[i] + j;
+					if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ) ++cnt;
+				}
+				printf("\t%d\t", cnt);
+				if (n_plp[i] == 0) {
+					printf("*\t*"); // FIXME: printf() is very slow...
+					if (conf->flag & MPLP_PRINT_POS) printf("\t*");
+				} else {
+					for (j = 0; j < n_plp[i]; ++j) {
+						const bam_pileup1_t *p = plp[i] + j;
+						if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ)
+							pileup_seq(plp[i] + j, pos, ref_len, ref);
+					}
+					putchar('\t');
+					for (j = 0; j < n_plp[i]; ++j) {
+						const bam_pileup1_t *p = plp[i] + j;
+						int c = bam1_qual(p->b)[p->qpos];
+						if (c >= conf->min_baseQ) {
+							c = c + 33 < 126? c + 33 : 126;
+							putchar(c);
+						}
+					}
+					if (conf->flag & MPLP_PRINT_MAPQ) {
+						putchar('\t');
+						for (j = 0; j < n_plp[i]; ++j) {
+							int c = plp[i][j].b->core.qual + 33;
+							if (c > 126) c = 126;
+							putchar(c);
+						}
+					}
+					if (conf->flag & MPLP_PRINT_POS) {
+						putchar('\t');
+						for (j = 0; j < n_plp[i]; ++j) {
+							if (j > 0) putchar(',');
+							printf("%d", plp[i][j].qpos + 1); // FIXME: printf() is very slow...
+						}
+					}
+				}
+			}
+			putchar('\n');
+		}
+	}
+}
+
 static int mpileup(mplp_conf_t *conf, int n, char **fn)
 {
 	extern void *bcf_call_add_rg(void *rghash, const char *hdtext, const char *list);
 	extern void bcf_call_del_rghash(void *rghash);
 	mplp_aux_t **data;
-	int i, tid, pos, *n_plp, tid0 = -1, beg0 = 0, end0 = 1u<<29, ref_len, ref_tid = -1, max_depth, max_indel_depth;
+	int i, tid, /*pos,*/ *n_plp, tid0 = -1, beg0 = 0, end0 = 1u<<29, ref_len, ref_tid = -1, max_depth, max_indel_depth;
 	const bam_pileup1_t **plp;
 	bam_mplp_t iter;
 	bam_header_t *h = 0;
@@ -330,90 +441,34 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 	}
 	max_indel_depth = conf->max_indel_depth * sm->n;
 	bam_mplp_set_maxcnt(iter, max_depth);
-	while (bam_mplp_auto(iter, &tid, &pos, n_plp, plp) > 0) {
-		if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
-		if (conf->bed && tid >= 0 && !bed_overlap(conf->bed, h->target_name[tid], pos, pos+1)) continue;
-		if (tid != ref_tid) {
-			free(ref); ref = 0;
-			if (conf->fai) ref = faidx_fetch_seq(conf->fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
-			for (i = 0; i < n; ++i) {
-			  data[i]->ref = ref;
-			  data[i]->ref_id = tid;
-			  data[i]->ref_len = ref_len;
-			}
-			ref_tid = tid;
-		}
-		if (conf->flag & MPLP_GLF) {
-			int total_depth, _ref0, ref16;
-			bcf1_t *b = calloc(1, sizeof(bcf1_t));
-			for (i = total_depth = 0; i < n; ++i) total_depth += n_plp[i];
-			group_smpl(&gplp, sm, &buf, n, fn, n_plp, plp, conf->flag & MPLP_IGNORE_RG);
-			_ref0 = (ref && pos < ref_len)? ref[pos] : 'N';
-			ref16 = bam_nt16_table[_ref0];
-			for (i = 0; i < gplp.n; ++i)
-				bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], ref16, bca, bcr + i);
-			bcf_call_combine(gplp.n, bcr, bca, ref16, &bc);
-			bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, 0, 0);
-			bcf_write(bp, bh, b);
-			bcf_destroy(b);
-			// call indels
-			if (!(conf->flag&MPLP_NO_INDEL) && total_depth < max_indel_depth && bcf_call_gap_prep(gplp.n, gplp.n_plp, gplp.plp, pos, bca, ref, rghash) >= 0) {
-				for (i = 0; i < gplp.n; ++i)
-					bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], -1, bca, bcr + i);
-				if (bcf_call_combine(gplp.n, bcr, bca, -1, &bc) >= 0) {
-					b = calloc(1, sizeof(bcf1_t));
-					bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, bca, ref);
-					bcf_write(bp, bh, b);
-					bcf_destroy(b);
-				}
-			}
-		} else {
-			printf("%s\t%d\t%c", h->target_name[tid], pos + 1, (ref && pos < ref_len)? ref[pos] : 'N');
-			for (i = 0; i < n; ++i) {
-				int j, cnt;
-				for (j = cnt = 0; j < n_plp[i]; ++j) {
-					const bam_pileup1_t *p = plp[i] + j;
-					if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ) ++cnt;
-				}
-				printf("\t%d\t", cnt);
-				if (n_plp[i] == 0) {
-					printf("*\t*"); // FIXME: printf() is very slow...
-					if (conf->flag & MPLP_PRINT_POS) printf("\t*");
-				} else {
-					for (j = 0; j < n_plp[i]; ++j) {
-						const bam_pileup1_t *p = plp[i] + j;
-						if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ)
-							pileup_seq(plp[i] + j, pos, ref_len, ref);
-					}
-					putchar('\t');
-					for (j = 0; j < n_plp[i]; ++j) {
-						const bam_pileup1_t *p = plp[i] + j;
-						int c = bam1_qual(p->b)[p->qpos];
-						if (c >= conf->min_baseQ) {
-							c = c + 33 < 126? c + 33 : 126;
-							putchar(c);
-						}
-					}
-					if (conf->flag & MPLP_PRINT_MAPQ) {
-						putchar('\t');
-						for (j = 0; j < n_plp[i]; ++j) {
-							int c = plp[i][j].b->core.qual + 33;
-							if (c > 126) c = 126;
-							putchar(c);
-						}
-					}
-					if (conf->flag & MPLP_PRINT_POS) {
-						putchar('\t');
-						for (j = 0; j < n_plp[i]; ++j) {
-							if (j > 0) putchar(',');
-							printf("%d", plp[i][j].qpos + 1); // FIXME: printf() is very slow...
-						}
-					}
-				}
-			}
-			putchar('\n');
-		}
-	}
+
+//	for (i=0; i<conf->num_threads; i++) {
+//		void* thebed = conf -> bed_list[i];
+
+	mpileup_kern(
+			conf,
+			n,
+			fn,
+			iter,
+			tid,
+			ref_tid,
+			n_plp,
+			plp,
+			beg0, end0,
+			h,
+			ref,
+			ref_len,
+			data,
+			sm,
+			gplp,
+			buf,
+			bca,
+			bcr,
+			bc,
+			bp,
+			bh,
+			max_indel_depth,
+			rghash);
 
 	bcf_close(bp);
 	bam_smpl_destroy(sm); free(buf.s);
