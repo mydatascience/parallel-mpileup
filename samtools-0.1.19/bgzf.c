@@ -140,6 +140,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 {
 	BGZF *fp = 0;
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
+	fprintf (stderr,"[bgzf_open] with fn=%s\n", path);
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		_bgzf_file_t fpr;
 		if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
@@ -151,6 +152,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
+	fprintf (stderr,"[bgzf_open] Success with fp->fp = %08X\n", fp->fp);
 	return fp;
 }
 

@@ -107,7 +107,10 @@ void *bed_read(const char *fn)
 	fp = strcmp(fn, "-")? gzopen(fn, "r") : gzdopen(fileno(stdin), "r");
 	if (fp == 0) return 0;
 	str = calloc(1, sizeof(kstring_t));
+//	fprintf (stderr,"[bed_read] Initial ks->buf=%s\n", ks->buf);
 	ks = ks_init(fp);
+	fprintf (stderr,"[bed_read] name=%s, ks->buf=%s\n", fn, ks->buf);
+	ks->buf="";
 	while (ks_getuntil(ks, 0, str, &dret) >= 0) { // read the chr name
 		int beg = -1, end = -1;
 		bed_reglist_t *p;
@@ -120,6 +123,7 @@ void *bed_read(const char *fn)
 		}
 		p = &kh_val(h, k);
 		if (dret != '\n') { // if the lines has other characters
+//			fprintf (stderr,"str=%s\n", str->s);
 			if (ks_getuntil(ks, 0, str, &dret) > 0 && isdigit(str->s[0])) {
 				beg = atoi(str->s); // begin
 				if (dret != '\n') {
@@ -132,6 +136,8 @@ void *bed_read(const char *fn)
 		}
 		if (dret != '\n') while ((dret = ks_getc(ks)) > 0 && dret != '\n'); // skip the rest of the line
 		if (end < 0 && beg > 0) end = beg, beg = beg - 1; // if there is only one column
+		fprintf (stderr,"[bed_read] beg=%d, end=%d\n", beg,end);
+
 		if (beg >= 0 && end > beg) {
 			if (p->n == p->m) {
 				p->m = p->m? p->m<<1 : 4;

@@ -117,16 +117,19 @@ static int mplp_func(void *data, bam1_t *b)
 	int ret, skip = 0;
 	do {
 		int has_ref;
+		fprintf (stderr,"[mplp_func]");
 		ret = ma->iter? bam_iter_read(ma->fp, ma->iter, b) : bam_read1(ma->fp, b);
 		if (ret < 0) break;
 		if (b->core.tid < 0 || (b->core.flag&BAM_FUNMAP)) { // exclude unmapped reads
 			skip = 1;
+			fprintf (stderr,"[mplp_func] exclude unmapped reads\n");
 			continue;
 		}
         if (ma->conf->rflag_require && !(ma->conf->rflag_require&b->core.flag)) { skip = 1; continue; }
         if (ma->conf->rflag_filter && ma->conf->rflag_filter&b->core.flag) { skip = 1; continue; }
 		if (ma->conf->bed) { // test overlap
 			skip = !bed_overlap(ma->conf->bed, ma->h->target_name[b->core.tid], b->core.pos, bam_calend(&b->core, bam1_cigar(b)));
+			fprintf (stderr,"[mplp_func] bed_overlap chr=%s, pos=%d, end=%d, skip=%d\n", ma->h->target_name[b->core.tid], b->core.pos,bam_calend(&b->core, bam1_cigar(b)),skip);
 			if (skip) continue;
 		}
 		if (ma->conf->rghash) { // exclude read groups
@@ -186,6 +189,19 @@ static void group_smpl(mplp_pileup_t *m, bam_sample_t *sm, kstring_t *buf,
 	}
 }
 
+int bam_reopen(bamFile* fp, char* fn) {
+	if (*fp){
+		bam_close(*fp);
+	}
+	*fp = strcmp(fn, "-") == 0? bam_dopen(fileno(stdin), "r") : bam_open(fn, "r");
+	 if ( *fp==NULL )        {
+		 fprintf(stderr, "[%s] failed to open %s: %s\n", __func__, fn, strerror(errno));
+	     return 1;
+	 }
+	 fprintf (stderr,"[bam_reopen] with fp->fp=%08X\n", (*fp)->fp);
+	 return 0;
+}
+
 static void mpileup_kern (
 		mplp_conf_t *conf,	//Config. const
 		mplp_aux_t **data,
@@ -214,6 +230,7 @@ static void mpileup_kern (
 	mplp_pileup_t gplp;
 	kstring_t buf;		//Filled deeper in group_smpl
 	bcf_call_t bc;
+	bam_header_t *h_tmp;
 	n_plp = calloc(n, sizeof(int*));
 	plp = calloc(n, sizeof(void*));
 
@@ -227,10 +244,16 @@ static void mpileup_kern (
 	memset(&bc, 0, sizeof(bcf_call_t));
 	for (thr=0; thr<conf->num_threads; thr++) {
 		if (bed_list!=NULL) {			//Multithreading on
+			fprintf (stderr,"\n-----Starting thread #%d-----\n", thr);
 			conf -> bed = bed_list [thr];
-			fprintf (stderr,"Starting thread #%d\n", thr);
+			bam_mplp_partinit (iter);	//Dirty hack
+			for (i = 0; i < n; ++i) {
+				bam_reopen (&data[i]->fp, fn[i]);
+				h_tmp = bam_header_read(data[i]->fp);
+			}
 		}
 		while (bam_mplp_auto(iter, &tid, &pos, n_plp, plp) > 0) {
+//			fprintf (stderr,"[bam_mplp_auto]\n");
 			if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
 			if (conf->bed && tid >= 0 && !bed_overlap(conf->bed, h->target_name[tid], pos, pos+1)) continue;
 			if (tid != ref_tid) {

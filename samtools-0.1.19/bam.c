@@ -196,9 +196,10 @@ int bam_read1(bamFile fp, bam1_t *b)
 
 	assert(BAM_CORE_SIZE == 32);
 	if ((ret = bam_read(fp, &block_len, 4)) != 4) {
-		if (ret == 0) return -1; // normal end-of-file
+		if (ret == 0) {fprintf (stderr,": EOF!\n");return -1;} // normal end-of-file
 		else return -2; // truncated
 	}
+//	fprintf (stderr,"[bam_read1] Blocklen = %d\n", block_len);
 	if (bam_read(fp, x, BAM_CORE_SIZE) != BAM_CORE_SIZE) return -3;
 	if (bam_is_be) {
 		bam_swap_endian_4p(&block_len);
@@ -216,9 +217,11 @@ int bam_read1(bamFile fp, bam1_t *b)
 		b->data = (uint8_t*)realloc(b->data, b->m_data);
 	}
 	if (bam_read(fp, b->data, b->data_len) != b->data_len) return -4;
+//	fprintf (stderr," OK (%d)!\n", 4 + block_len);
 	b->l_aux = b->data_len - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
 	if (bam_is_be) swap_endian_data(c, b->data_len, b->data);
 	if (bam_no_B) bam_remove_B(b);
+	fprintf (stderr,"[bam_read1]\n");
 	return 4 + block_len;
 }
 

@@ -267,16 +267,22 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
 	const bam_pileup1_t *plp;
+//	fprintf (stderr,"[plp] func=%08X, error=%d\n", iter->func, iter->error);
 	if (iter->func == 0 || iter->error) { *_n_plp = -1; return 0; }
+//	fprintf (stderr,"[plp]\n");
 	if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 	else { // no pileup line can be obtained; read alignments
 		*_n_plp = 0;
 		if (iter->is_eof) return 0;
+//		fprintf (stderr,"[plp0]\n");
 		while (iter->func(iter->data, iter->b) >= 0) {
+			fprintf (stderr,"[plp1]");
 			if (bam_plp_push(iter, iter->b) < 0) {
 				*_n_plp = -1;
+//				fprintf (stderr,"[plp1]\n");
 				return 0;
 			}
+//			fprintf (stderr,"[plp2]\n");
 			if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 			// otherwise no pileup line can be returned; read the next alignment.
 		}
@@ -379,6 +385,15 @@ struct __bam_mplp_t {
 	const bam_pileup1_t **plp;
 };
 
+void bam_mplp_partinit (bam_mplp_t iter) {
+	int i;
+	iter->min = (uint64_t)-1;
+	for (i = 0; i < iter->n; ++i) {
+			iter->pos[i] = iter->min;
+			iter->iter[i]->is_eof = 0;
+	}
+}
+
 bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
 {
 	int i;
@@ -414,15 +429,20 @@ void bam_mplp_destroy(bam_mplp_t iter)
 
 int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp)
 {
+//	fprintf (stderr,"!");
 	int i, ret = 0;
 	uint64_t new_min = (uint64_t)-1;
 	for (i = 0; i < iter->n; ++i) {
+//		fprintf (stderr,"\npos[i]=%d, min=%d\n",iter->pos[i], iter->min);
 		if (iter->pos[i] == iter->min) {
 			int tid, pos;
 			iter->plp[i] = bam_plp_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
 			iter->pos[i] = (uint64_t)tid<<32 | pos;
+//			fprintf (stderr,"tid=%d, pos=%d\n",tid, pos);
 		}
 		if (iter->plp[i] && iter->pos[i] < new_min) new_min = iter->pos[i];
+		fprintf (stderr,"pos[i]=%d, new_min=%d\n",iter->pos[i], new_min);
+		fprintf (stderr,"!");
 	}
 	iter->min = new_min;
 	if (new_min == (uint64_t)-1) return 0;
