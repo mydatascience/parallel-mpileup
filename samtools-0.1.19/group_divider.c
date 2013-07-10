@@ -55,10 +55,12 @@ void beds_array_add (char* newbed) {
 	if (beds_array==NULL) {
 		beds_array = bed;
 		bed_tail = beds_array;
+		bed_tail->next=NULL;
 	}
 	else {
 		bed_tail->next = bed;
 		bed_tail = bed_tail->next;
+		bed_tail->next = NULL;
 	}
 	bed_tail->bed = bedname;
 	fprintf (stderr,"Added BED %s...\n", bed_tail->bed);
@@ -85,6 +87,7 @@ char** bed_array_return () {
 		*(cur++) = cbed->bed;
 		fprintf (stderr,"BED is %s!\n", cbed->bed);
 		cbed=cbed->next;
+		//TODO: free malloc'd beds_array
 	}
 	return result;
 }

@@ -109,8 +109,8 @@ void *bed_read(const char *fn)
 	str = calloc(1, sizeof(kstring_t));
 //	fprintf (stderr,"[bed_read] Initial ks->buf=%s\n", ks->buf);
 	ks = ks_init(fp);
-	fprintf (stderr,"[bed_read] name=%s, ks->buf=%s\n", fn, ks->buf);
-	ks->buf="";
+//	fprintf (stderr,"[bed_read] name=%s, ks->buf=%s\n", fn, ks->buf);
+//	ks->buf="";
 	while (ks_getuntil(ks, 0, str, &dret) >= 0) { // read the chr name
 		int beg = -1, end = -1;
 		bed_reglist_t *p;
