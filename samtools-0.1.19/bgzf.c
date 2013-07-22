@@ -344,7 +344,7 @@ int bgzf_read_block(BGZF *fp)
 ssize_t bgzf_read(BGZF *fp, void *data, ssize_t length)
 {
 	ssize_t bytes_read = 0;
-	uint8_t *output = data;
+    uint8_t *output = data;
 	if (length <= 0) return 0;
 	assert(fp->is_write == 0);
 	while (bytes_read < length) {
@@ -355,18 +355,18 @@ ssize_t bgzf_read(BGZF *fp, void *data, ssize_t length)
 			available = fp->block_length - fp->block_offset;
 			if (available <= 0) break;
 		}
-		copy_length = length - bytes_read < available? length - bytes_read : available;
+        copy_length = length - bytes_read < available? length - bytes_read : available;
 		buffer = fp->uncompressed_block;
 		memcpy(output, buffer + fp->block_offset, copy_length);
 		fp->block_offset += copy_length;
 		output += copy_length;
 		bytes_read += copy_length;
-	}
+    }
 	if (fp->block_offset == fp->block_length) {
 		fp->block_address = _bgzf_tell((_bgzf_file_t)fp->fp);
 		fp->block_offset = fp->block_length = 0;
 	}
-	return bytes_read;
+    return bytes_read;
 }
 
 /***** BEGIN: multi-threading *****/

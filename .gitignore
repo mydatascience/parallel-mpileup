@@ -1,0 +1,12 @@
+./samtools-0.1.19/.project
+./samtools-0.1.19/.cproject
+./samtools-0.1.19/parallel_samtools.*
+./samtools-0.1.19/bcftools/bcftools
+./samtools-0.1.19/misc/ace2sam
+./samtools-0.1.19/misc/bamcheck
+./samtools-0.1.19/misc/maq2sam-long
+./samtools-0.1.19/misc/maq2sam-short
+./samtools-0.1.19/misc/md5fa
+./samtools-0.1.19/misc/md5sum-lite
+./samtools-0.1.19/misc/wgsim
+./samtools-0.1.19/samtools

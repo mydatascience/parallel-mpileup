@@ -96,7 +96,7 @@ FILE * open_bed(FILE* fbed, char * refname, int currfile, char * outname) {
 	if (fbed != NULL) {
 		fclose(fbed);
 	}
-	sprintf (outname, "%s.%i.bed", refname, currfile);
+    sprintf (outname, "%s.%i.bed", refname, currfile);
 	beds_array_add (outname);
 	return fopen(outname, "w");
 }
@@ -145,6 +145,7 @@ int group_divider (char* filename, int threads, char*** beds) {
 	curr = basename(filename);
 	refname = malloc (strchr(curr, '.') - curr);
 	strncpy(refname, curr, strchr(curr, '.') - curr);
+	refname[strlen(refname) - 1] = '\0';
 	fprintf (stderr,"%s\n", refname);
 
 	outname = malloc (strlen(filename)+8);
@@ -223,10 +224,13 @@ int group_divider (char* filename, int threads, char*** beds) {
 		}
 	}
 	if (currpos) {
-		flushbed (fbed, chrname,regstart,currpos);
-//		echobed (chrname,regstart,currpos);
+        flushbed (fbed, chrname,regstart,currpos);
+//        echobed (chrname,regstart,currpos);
     }
-	*beds =  bed_array_return ();
+    if (fbed != NULL) {
+        fclose(fbed);
+    }
+    *beds =  bed_array_return ();
 	return bed_list_count ();
 }
 	

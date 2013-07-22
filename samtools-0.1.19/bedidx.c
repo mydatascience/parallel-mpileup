@@ -89,7 +89,7 @@ int bed_overlap_core(const bed_reglist_t *p, int beg, int end)
 int bed_overlap(const void *_h, const char *chr, int beg, int end)
 {
 	const reghash_t *h = (const reghash_t*)_h;
-	khint_t k;
+    khint_t k;
 	if (!h) return 0;
 	k = kh_get(reg, h, chr);
 	if (k == kh_end(h)) return 0;
@@ -109,7 +109,7 @@ void *bed_read(const char *fn)
 	str = calloc(1, sizeof(kstring_t));
 //	fprintf (stderr,"[bed_read] Initial ks->buf=%s\n", ks->buf);
 	ks = ks_init(fp);
-//	fprintf (stderr,"[bed_read] name=%s, ks->buf=%s\n", fn, ks->buf);
+//    fprintf (stderr,"[bed_read] name=%s, ks->buf=%s\n", fn, ks->buf);
 //	ks->buf="";
 	while (ks_getuntil(ks, 0, str, &dret) >= 0) { // read the chr name
 		int beg = -1, end = -1;
@@ -123,7 +123,7 @@ void *bed_read(const char *fn)
 		}
 		p = &kh_val(h, k);
 		if (dret != '\n') { // if the lines has other characters
-//			fprintf (stderr,"str=%s\n", str->s);
+//            fprintf (stderr,"str=%s\n", str->s);
 			if (ks_getuntil(ks, 0, str, &dret) > 0 && isdigit(str->s[0])) {
 				beg = atoi(str->s); // begin
 				if (dret != '\n') {
@@ -136,7 +136,7 @@ void *bed_read(const char *fn)
 		}
 		if (dret != '\n') while ((dret = ks_getc(ks)) > 0 && dret != '\n'); // skip the rest of the line
 		if (end < 0 && beg > 0) end = beg, beg = beg - 1; // if there is only one column
-		fprintf (stderr,"[bed_read] beg=%d, end=%d\n", beg,end);
+//		fprintf (stderr,"[bed_read] beg=%d, end=%d\n", beg,end);
 
 		if (beg >= 0 && end > beg) {
 			if (p->n == p->m) {

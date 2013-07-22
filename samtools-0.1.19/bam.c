@@ -192,14 +192,15 @@ int bam_read1(bamFile fp, bam1_t *b)
 {
 	bam1_core_t *c = &b->core;
 	int32_t block_len, ret, i;
-	uint32_t x[8];
+    uint32_t x[8];
+    int data_len;
 
 	assert(BAM_CORE_SIZE == 32);
 	if ((ret = bam_read(fp, &block_len, 4)) != 4) {
 		if (ret == 0) {fprintf (stderr,": EOF!\n");return -1;} // normal end-of-file
 		else return -2; // truncated
 	}
-//	fprintf (stderr,"[bam_read1] Blocklen = %d\n", block_len);
+//    fprintf (stderr,"[bam_read1] Blocklen = %d\n", block_len);
 	if (bam_read(fp, x, BAM_CORE_SIZE) != BAM_CORE_SIZE) return -3;
 	if (bam_is_be) {
 		bam_swap_endian_4p(&block_len);
@@ -209,19 +210,20 @@ int bam_read1(bamFile fp, bam1_t *b)
 	c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
 	c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
 	c->l_qseq = x[4];
-	c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
+    c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
 	b->data_len = block_len - BAM_CORE_SIZE;
 	if (b->m_data < b->data_len) {
 		b->m_data = b->data_len;
 		kroundup32(b->m_data);
 		b->data = (uint8_t*)realloc(b->data, b->m_data);
-	}
-	if (bam_read(fp, b->data, b->data_len) != b->data_len) return -4;
+    }
+
+    if ((data_len = bam_read(fp, b->data, b->data_len)) != b->data_len) { return -4;}
 //	fprintf (stderr," OK (%d)!\n", 4 + block_len);
 	b->l_aux = b->data_len - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
 	if (bam_is_be) swap_endian_data(c, b->data_len, b->data);
 	if (bam_no_B) bam_remove_B(b);
-	fprintf (stderr,"[bam_read1]\n");
+//	fprintf (stderr,"[bam_read1]\n");
 	return 4 + block_len;
 }
 

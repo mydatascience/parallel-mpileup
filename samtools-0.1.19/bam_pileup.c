@@ -267,22 +267,22 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
 	const bam_pileup1_t *plp;
-//	fprintf (stderr,"[plp] func=%08X, error=%d\n", iter->func, iter->error);
+//    fprintf (stderr,"[plp] func=%08X, error=%d\n", iter->func, iter->error);
 	if (iter->func == 0 || iter->error) { *_n_plp = -1; return 0; }
-//	fprintf (stderr,"[plp]\n");
+//    fprintf (stderr,"[plp]\n");
 	if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 	else { // no pileup line can be obtained; read alignments
 		*_n_plp = 0;
 		if (iter->is_eof) return 0;
-//		fprintf (stderr,"[plp0]\n");
-		while (iter->func(iter->data, iter->b) >= 0) {
-			fprintf (stderr,"[plp1]");
+//        fprintf (stderr,"[plp0]\n");
+        while (iter->func(iter->data, iter->b) >= 0) {
+//            fprintf (stderr,"[plp1]");
 			if (bam_plp_push(iter, iter->b) < 0) {
 				*_n_plp = -1;
-//				fprintf (stderr,"[plp1]\n");
+//                fprintf (stderr,"[plp1]\n");
 				return 0;
 			}
-//			fprintf (stderr,"[plp2]\n");
+//            fprintf (stderr,"[plp2]\n");
 			if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 			// otherwise no pileup line can be returned; read the next alignment.
 		}
@@ -429,23 +429,25 @@ void bam_mplp_destroy(bam_mplp_t iter)
 
 int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp)
 {
-//	fprintf (stderr,"!");
+//    fprintf (stderr,"!");
+//    fflush(stderr);
+//    fprintf(stderr, "[bam_mplp_auto] iter %#x, pos %d\n", (uint64_t)iter, iter->pos);
 	int i, ret = 0;
 	uint64_t new_min = (uint64_t)-1;
 	for (i = 0; i < iter->n; ++i) {
-//		fprintf (stderr,"\npos[i]=%d, min=%d\n",iter->pos[i], iter->min);
+//        fprintf (stderr,"\npos[i]=%d, min=%d\n",iter->pos[i], iter->min);
 		if (iter->pos[i] == iter->min) {
 			int tid, pos;
 			iter->plp[i] = bam_plp_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
 			iter->pos[i] = (uint64_t)tid<<32 | pos;
-//			fprintf (stderr,"tid=%d, pos=%d\n",tid, pos);
+//            fprintf (stderr,"plp=%#x, tid=%d, pos=%u\n", iter->plp[i], tid, iter->pos[i]);
 		}
 		if (iter->plp[i] && iter->pos[i] < new_min) new_min = iter->pos[i];
-		fprintf (stderr,"pos[i]=%d, new_min=%d\n",iter->pos[i], new_min);
-		fprintf (stderr,"!");
+//        fprintf (stderr,"pos[i]=%d, new_min=%d\n",iter->pos[i], new_min);
+//        fprintf (stderr,"!, %u\n", (uint64_t)-1);
 	}
-	iter->min = new_min;
-	if (new_min == (uint64_t)-1) return 0;
+    iter->min = new_min;
+    if (new_min == (uint64_t)-1) return 0;
 	*_tid = new_min>>32; *_pos = (uint32_t)new_min;
 	for (i = 0; i < iter->n; ++i) {
 		if (iter->pos[i] == iter->min) { // FIXME: valgrind reports "uninitialised value(s) at this line"
@@ -453,5 +455,7 @@ int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_p
 			++ret;
 		} else n_plp[i] = 0, plp[i] = 0;
 	}
-	return ret;
+//    fprintf(stderr, "[bam_mplp_auto] end iter %#x, pos %d\n", (uint64_t)iter, iter->pos[0]);
+//    fflush(stderr);
+    return ret;
 }
