@@ -152,7 +152,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
-	fprintf (stderr,"[bgzf_open] Success with fp->fp = %08X\n", fp->fp);
+//	fprintf (stderr,"[bgzf_open] Success with fp->fp = %08X\n", fp->fp);
 	return fp;
 }
 

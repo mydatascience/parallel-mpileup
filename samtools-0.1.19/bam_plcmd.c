@@ -122,13 +122,11 @@ typedef struct {
     int ref_len;
     const bam_sample_t *sm;
     bcf_callaux_t *bca;
-    const bcf_t *bp;		//BCF file struct, bp->fp - file pointer, can be stdout
+    bcf_t *bp;		//BCF file struct, bp->fp - file pointer, can be stdout
     const bcf_hdr_t *bh;	//BCF header. We use bp->fp and bh->n_smpl in bcf_write()
     int max_indel_depth;
     const void *rghash;
 } mplp_kernel_args_t;
-
-pthread_mutex_t read_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int mplp_func(void *data, bam1_t *b)
 {
@@ -221,7 +219,7 @@ int bam_reopen(bamFile * fp, const char* fn) {
         fprintf(stderr, "[%s] failed to open %s: %s\n", __func__, fn, strerror(errno));
         return 1;
     }
-    fprintf (stderr,"[bam_reopen] with fp->fp=%08X\n", (*fp)->fp);
+//    fprintf (stderr,"[bam_reopen] with fp->fp=%08X\n", (*fp)->fp);
     return 0;
 }
 
@@ -249,10 +247,12 @@ void * mpileup_kern (
     int ref_len = params->ref_len;
     const bam_sample_t *sm = params->sm;
     bcf_callaux_t *bca = params->bca;
-    const bcf_t *bp = params->bp;		//BCF file struct, bp->fp - file pointer, can be stdout
+    bcf_t *bp = params->bp;		//BCF file struct, bp->fp - file pointer, can be stdout
     const bcf_hdr_t *bh = params->bh;	//BCF header. We use bp->fp and bh->n_smpl in bcf_write()
     int max_indel_depth = params->max_indel_depth;
     const void *rghash = params->rghash;
+
+    static pthread_mutex_t write_lock = PTHREAD_MUTEX_INITIALIZER;
 
     n_plp = calloc(n, sizeof(int));
     plp = calloc(n, sizeof(void*));
@@ -273,10 +273,14 @@ void * mpileup_kern (
         if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
         if (data[0]->bed && tid >= 0 && !bed_overlap(data[0]->bed, h->target_name[tid], pos, pos+1)) continue;
         if (tid != ref_tid) {
-//            pthread_mutex_lock(&read_lock);
+            pthread_mutex_lock(&write_lock);
+            if (ref) {
+                fprintf(stderr, "ref != NULL\n");
+                fflush(stderr);
+            }
             free(ref); ref = 0;
             if (conf->fai) ref = faidx_fetch_seq(conf->fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
-//            pthread_mutex_unlock(&read_lock);
+            pthread_mutex_unlock(&write_lock);
             for (i = 0; i < n; ++i) {
                 data[i]->ref = ref;
                 data[i]->ref_id = tid;
@@ -295,9 +299,9 @@ void * mpileup_kern (
                 bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], ref16, bca, bcr + i);
             bcf_call_combine(gplp.n, bcr, bca, ref16, &bc);
             bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, 0, 0);
-            pthread_mutex_lock(&read_lock);
+            pthread_mutex_lock(&write_lock);
             bcf_write(bp, bh, b);
-            pthread_mutex_unlock(&read_lock);
+            pthread_mutex_unlock(&write_lock);
             bcf_destroy(b);
             // call indels
             if (!(conf->flag&MPLP_NO_INDEL) && total_depth < max_indel_depth && bcf_call_gap_prep(gplp.n, gplp.n_plp, gplp.plp, pos, bca, ref, rghash) >= 0) {
@@ -306,14 +310,14 @@ void * mpileup_kern (
                 if (bcf_call_combine(gplp.n, bcr, bca, -1, &bc) >= 0) {
                     b = calloc(1, sizeof(bcf1_t));
                     bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, bca, ref);
-                    pthread_mutex_lock(&read_lock);
+                    pthread_mutex_lock(&write_lock);
                     bcf_write(bp, bh, b);
-                    pthread_mutex_unlock(&read_lock);
+                    pthread_mutex_unlock(&write_lock);
                     bcf_destroy(b);
                 }
             }
         } else {
-            pthread_mutex_lock(&read_lock);
+            pthread_mutex_lock(&write_lock);
             printf("%s\t%d\t%c", h->target_name[tid], pos + 1, (ref && pos < ref_len)? ref[pos] : 'N');
             for (i = 0; i < n; ++i) {
                 int j, cnt;
@@ -358,7 +362,7 @@ void * mpileup_kern (
                 }
             }
             putchar('\n');
-            pthread_mutex_unlock(&read_lock);
+            pthread_mutex_unlock(&write_lock);
         }
 //        fprintf (stderr,"[/bam_mplp_auto]\n");
     }//end While
@@ -498,14 +502,13 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 	}
 	max_indel_depth = conf->max_indel_depth * sm->n;
 
-    fprintf(stderr, "size is %i\n", sizeof(mplp_aux_t));
-
     threads = calloc(conf->num_threads, sizeof(pthread_t));
     for (i = 0; i < conf->num_threads; i++) {
         mplp_kernel_args_t kernel_args;
         mplp_aux_t **curr_data;
         bcf_callaux_t *bca = 0;
         int j;
+        void *rghash = 0;
         curr_data = calloc(n, sizeof(mplp_aux_t*));
 
         for (j = 0; j < n; ++j) {
@@ -520,13 +523,15 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
         }
 
         for (j = 0; j < n; ++j) {
+            bam_header_t *h_tmp;
             curr_data[j]->fp = strcmp(fn[j], "-") == 0? bam_dopen(fileno(stdin), "r") : bam_open(fn[j], "r");
-            bam_header_read(curr_data[j]->fp);
-/*            if (data[j]->ref != NULL) {
+            h_tmp = bam_header_read(curr_data[j]->fp);
+            rghash = bcf_call_add_rg(rghash, h_tmp->text, conf->pl_list);
+            if (data[j]->ref != NULL) {
                 curr_data[j]->ref = calloc(data[j]->ref_len, sizeof(char));
                 strcpy(curr_data[j]->ref, data[j]->ref);
             }
-*/        }
+        }
 
         bca = bcf_call_init(-1., conf->min_baseQ);
         bca->rghash = rghash;
