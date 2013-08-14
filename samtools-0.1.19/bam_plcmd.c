@@ -273,12 +273,8 @@ void * mpileup_kern (
         if (conf->reg && (pos < beg0 || pos >= end0)) continue; // out of the region requested
         if (data[0]->bed && tid >= 0 && !bed_overlap(data[0]->bed, h->target_name[tid], pos, pos+1)) continue;
         if (tid != ref_tid) {
-            pthread_mutex_lock(&write_lock);
-            if (ref) {
-                fprintf(stderr, "ref != NULL\n");
-                fflush(stderr);
-            }
             free(ref); ref = 0;
+            pthread_mutex_lock(&write_lock);
             if (conf->fai) ref = faidx_fetch_seq(conf->fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
             pthread_mutex_unlock(&write_lock);
             for (i = 0; i < n; ++i) {
@@ -368,7 +364,8 @@ void * mpileup_kern (
     }//end While
     free(n_plp); free(plp); free(buf.s);
 	free(bc.PL); free(bcr);
-	for (i = 0; i < gplp.n; ++i) free(gplp.plp[i]);
+    free(params);
+    for (i = 0; i < gplp.n; ++i) free(gplp.plp[i]);
     free(gplp.plp); free(gplp.n_plp); free(gplp.m_plp);
     bam_mplp_destroy(iter);
     pthread_exit(NULL);
@@ -391,7 +388,7 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 
 	bam_sample_t *sm = 0;
 
-	data = calloc(n, sizeof(void*));
+    data = calloc(n, sizeof(void*));
 	sm = bam_smpl_init();
 
 	// read the header and initialize data
@@ -504,12 +501,12 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 
     threads = calloc(conf->num_threads, sizeof(pthread_t));
     for (i = 0; i < conf->num_threads; i++) {
-        mplp_kernel_args_t kernel_args;
-        mplp_aux_t **curr_data;
         bcf_callaux_t *bca = 0;
         int j;
         void *rghash = 0;
-        curr_data = calloc(n, sizeof(mplp_aux_t*));
+
+        mplp_aux_t **curr_data = calloc(n, sizeof(mplp_aux_t*));
+        mplp_kernel_args_t *kernel_args = calloc(1, sizeof(mplp_kernel_args_t));
 
         for (j = 0; j < n; ++j) {
             curr_data[j] = calloc(1, sizeof(mplp_aux_t));
@@ -540,24 +537,24 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
         bca->min_support = conf->min_support;
         bca->per_sample_flt = conf->flag & MPLP_PER_SAMPLE;
 
-        kernel_args.conf = conf;
-        kernel_args.data = curr_data;
-        kernel_args.n = n;
-        kernel_args.fn = fn;
-        kernel_args.tid = tid;
-        kernel_args.ref_tid = ref_tid;
-        kernel_args.beg0 = beg0; kernel_args.end0 = end0;
-        kernel_args.h = h;
-        kernel_args.ref = ref;
-        kernel_args.ref_len = ref_len;
-        kernel_args.sm = sm;
-        kernel_args.bca = bca;
-        kernel_args.bp = bp;
-        kernel_args.bh = bh;
-        kernel_args.max_indel_depth = max_indel_depth;
-        kernel_args.rghash = rghash;
+        kernel_args->conf = conf;
+        kernel_args->n = n;
+        kernel_args->fn = fn;
+        kernel_args->tid = tid;
+        kernel_args->ref_tid = ref_tid;
+        kernel_args->data = curr_data;
+        kernel_args->beg0 = beg0; kernel_args->end0 = end0;
+        kernel_args->h = h;
+        kernel_args->ref = ref;
+        kernel_args->ref_len = ref_len;
+        kernel_args->sm = sm;
+        kernel_args->bca = bca;
+        kernel_args->bp = bp;
+        kernel_args->bh = bh;
+        kernel_args->max_indel_depth = max_indel_depth;
+        kernel_args->rghash = rghash;
 
-        pthread_create(&threads[i], NULL, mpileup_kern, (void *) &kernel_args);
+        pthread_create(&threads[i], NULL, mpileup_kern, (void *) kernel_args);
 
 	}
 
