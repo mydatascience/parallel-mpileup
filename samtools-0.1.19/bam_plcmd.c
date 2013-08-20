@@ -120,8 +120,8 @@ typedef struct {
     const bam_header_t *h;
     char *ref;
     int ref_len;
+    faidx_t *fai;
     const bam_sample_t *sm;
-    bcf_callaux_t *bca;
     bcf_t *bp;		//BCF file struct, bp->fp - file pointer, can be stdout
     const bcf_hdr_t *bh;	//BCF header. We use bp->fp and bh->n_smpl in bcf_write()
     int max_indel_depth;
@@ -233,6 +233,7 @@ void * mpileup_kern (
 	kstring_t buf;		//Filled deeper in group_smpl
     bcf_call_t bc;
     bam_mplp_t iter;
+    bcf_callaux_t *bca;
     mplp_kernel_args_t *params = (mplp_kernel_args_t *)args;
     const mplp_conf_t *conf = params->conf;	//Config. const
     mplp_aux_t **data = params->data;
@@ -242,11 +243,11 @@ void * mpileup_kern (
     int ref_tid = params->ref_tid;
     int beg0 = params->beg0;
     int end0 = params->end0;
+    faidx_t *fai = params->fai;
     const bam_header_t *h = params->h;
     char *ref = params->ref;
     int ref_len = params->ref_len;
     const bam_sample_t *sm = params->sm;
-    bcf_callaux_t *bca = params->bca;
     bcf_t *bp = params->bp;		//BCF file struct, bp->fp - file pointer, can be stdout
     const bcf_hdr_t *bh = params->bh;	//BCF header. We use bp->fp and bh->n_smpl in bcf_write()
     int max_indel_depth = params->max_indel_depth;
@@ -257,6 +258,15 @@ void * mpileup_kern (
     n_plp = calloc(n, sizeof(int));
     plp = calloc(n, sizeof(void*));
     bcr = calloc(sm->n, sizeof(bcf_callret1_t));
+
+    if (conf->flag & MPLP_GLF) {
+        bca = bcf_call_init(-1., conf->min_baseQ);
+        bca->rghash = rghash;
+        bca->openQ = conf->openQ, bca->extQ = conf->extQ, bca->tandemQ = conf->tandemQ;
+        bca->min_frac = conf->min_frac;
+        bca->min_support = conf->min_support;
+        bca->per_sample_flt = conf->flag & MPLP_PER_SAMPLE;
+    }
 
 	memset(&gplp, 0, sizeof(mplp_pileup_t));
     gplp.n = sm->n;
@@ -274,9 +284,9 @@ void * mpileup_kern (
         if (data[0]->bed && tid >= 0 && !bed_overlap(data[0]->bed, h->target_name[tid], pos, pos+1)) continue;
         if (tid != ref_tid) {
             free(ref); ref = 0;
-            pthread_mutex_lock(&write_lock);
-            if (conf->fai) ref = faidx_fetch_seq(conf->fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
-            pthread_mutex_unlock(&write_lock);
+//            pthread_mutex_lock(&write_lock);
+            if (fai) ref = faidx_fetch_seq(fai, h->target_name[tid], 0, 0x7fffffff, &ref_len);
+//            pthread_mutex_unlock(&write_lock);
             for (i = 0; i < n; ++i) {
                 data[i]->ref = ref;
                 data[i]->ref_id = tid;
@@ -315,22 +325,27 @@ void * mpileup_kern (
         } else {
             pthread_mutex_lock(&write_lock);
             printf("%s\t%d\t%c", h->target_name[tid], pos + 1, (ref && pos < ref_len)? ref[pos] : 'N');
+            pthread_mutex_unlock(&write_lock);
             for (i = 0; i < n; ++i) {
                 int j, cnt;
                 for (j = cnt = 0; j < n_plp[i]; ++j) {
                     const bam_pileup1_t *p = plp[i] + j;
                     if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ) ++cnt;
                 }
+                pthread_mutex_lock(&write_lock);
                 printf("\t%d\t", cnt);
                 if (n_plp[i] == 0) {
                     printf("*\t*"); // FIXME: printf() is very slow...
                     if (conf->flag & MPLP_PRINT_POS) printf("\t*");
+                    pthread_mutex_unlock(&write_lock);
                 } else {
+                    pthread_mutex_unlock(&write_lock);
                     for (j = 0; j < n_plp[i]; ++j) {
                         const bam_pileup1_t *p = plp[i] + j;
                         if (bam1_qual(p->b)[p->qpos] >= conf->min_baseQ)
                             pileup_seq(plp[i] + j, pos, ref_len, ref);
                     }
+                    pthread_mutex_lock(&write_lock);
                     putchar('\t');
                     for (j = 0; j < n_plp[i]; ++j) {
                         const bam_pileup1_t *p = plp[i] + j;
@@ -355,8 +370,10 @@ void * mpileup_kern (
                             printf("%d", plp[i][j].qpos + 1); // FIXME: printf() is very slow...
                         }
                     }
+                    pthread_mutex_unlock(&write_lock);
                 }
             }
+            pthread_mutex_lock(&write_lock);
             putchar('\n');
             pthread_mutex_unlock(&write_lock);
         }
@@ -530,12 +547,11 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
             }
         }
 
-        bca = bcf_call_init(-1., conf->min_baseQ);
-        bca->rghash = rghash;
-        bca->openQ = conf->openQ, bca->extQ = conf->extQ, bca->tandemQ = conf->tandemQ;
-        bca->min_frac = conf->min_frac;
-        bca->min_support = conf->min_support;
-        bca->per_sample_flt = conf->flag & MPLP_PER_SAMPLE;
+        if (conf->fai && conf->num_threads > 1) {
+            kernel_args->fai = fai_load(conf->fai_fname);
+        } else {
+            kernel_args->fai = conf->fai;
+        }
 
         kernel_args->conf = conf;
         kernel_args->n = n;
@@ -548,7 +564,6 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
         kernel_args->ref = ref;
         kernel_args->ref_len = ref_len;
         kernel_args->sm = sm;
-        kernel_args->bca = bca;
         kernel_args->bp = bp;
         kernel_args->bh = bh;
         kernel_args->max_indel_depth = max_indel_depth;
