@@ -107,7 +107,11 @@ extern "C" {
 	int bcf_read(bcf_t *bp, const bcf_hdr_t *h, bcf1_t *b);
 	// call this function if b->str is changed
 	int bcf_sync(bcf1_t *b);
-	// write a BCF record
+    // write a BCF record in queue
+    int bcf_write_queue(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b);
+    // write a BCF record in queue
+    int bcf_write_queue_destroy(bcf_t *bp, const bcf_hdr_t *h);
+    // write a BCF record
 	int bcf_write(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b);
 	// read the BCF header; BCF only
 	bcf_hdr_t *bcf_hdr_read(bcf_t *b);

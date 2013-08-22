@@ -49,7 +49,7 @@ struct bed_list {
 bed_list* beds_array = NULL;
 bed_list* bed_tail;
 void beds_array_add (char* newbed) {
-	bed_list* bed = malloc (sizeof(beds_array));
+    bed_list* bed = malloc (sizeof(bed_list));
 	char* bedname = malloc (strlen(newbed)+1);
 	strcpy (bedname,newbed);
 	if (beds_array==NULL) {
@@ -143,9 +143,9 @@ int group_divider (char* filename, int threads, char*** beds) {
 
 
 	curr = basename(filename);
-	refname = malloc (strchr(curr, '.') - curr);
-	strncpy(refname, curr, strchr(curr, '.') - curr);
-	refname[strlen(refname) - 1] = '\0';
+    fprintf(stderr, "len=%i\n", strlen(curr));
+    refname = calloc(strlen(curr), sizeof(char));
+    strcpy(refname, curr);
 	fprintf (stderr,"%s\n", refname);
 
 	outname = malloc (strlen(filename)+8);

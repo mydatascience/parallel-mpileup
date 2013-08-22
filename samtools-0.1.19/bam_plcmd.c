@@ -233,7 +233,7 @@ void * mpileup_kern (
 	kstring_t buf;		//Filled deeper in group_smpl
     bcf_call_t bc;
     bam_mplp_t iter;
-    bcf_callaux_t *bca;
+    bcf_callaux_t *bca = NULL;
     mplp_kernel_args_t *params = (mplp_kernel_args_t *)args;
     const mplp_conf_t *conf = params->conf;	//Config. const
     mplp_aux_t **data = params->data;
@@ -272,7 +272,7 @@ void * mpileup_kern (
     gplp.n = sm->n;
     gplp.n_plp = calloc(sm->n, sizeof(int));
     gplp.m_plp = calloc(sm->n, sizeof(int));
-    gplp.plp = calloc(sm->n, sizeof(void*));
+    gplp.plp = calloc(sm->n, sizeof(bam_pileup1_t*));
 
     iter = bam_mplp_init(n, mplp_func, (void**)data);
     bam_mplp_set_maxcnt(iter, 8000);
@@ -305,10 +305,10 @@ void * mpileup_kern (
                 bcf_call_glfgen(gplp.n_plp[i], gplp.plp[i], ref16, bca, bcr + i);
             bcf_call_combine(gplp.n, bcr, bca, ref16, &bc);
             bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, 0, 0);
-            pthread_mutex_lock(&write_lock);
-            bcf_write(bp, bh, b);
-            pthread_mutex_unlock(&write_lock);
-            bcf_destroy(b);
+//            pthread_mutex_lock(&write_lock);
+            bcf_write_queue(bp, bh, b);
+//            pthread_mutex_unlock(&write_lock);
+//            bcf_destroy(b);
             // call indels
             if (!(conf->flag&MPLP_NO_INDEL) && total_depth < max_indel_depth && bcf_call_gap_prep(gplp.n, gplp.n_plp, gplp.plp, pos, bca, ref, rghash) >= 0) {
                 for (i = 0; i < gplp.n; ++i)
@@ -316,10 +316,10 @@ void * mpileup_kern (
                 if (bcf_call_combine(gplp.n, bcr, bca, -1, &bc) >= 0) {
                     b = calloc(1, sizeof(bcf1_t));
                     bcf_call2bcf(tid, pos, &bc, b, bcr, conf->fmt_flag, bca, ref);
-                    pthread_mutex_lock(&write_lock);
-                    bcf_write(bp, bh, b);
-                    pthread_mutex_unlock(&write_lock);
-                    bcf_destroy(b);
+//                    pthread_mutex_lock(&write_lock);
+                    bcf_write_queue(bp, bh, b);
+//                    pthread_mutex_unlock(&write_lock);
+//                    bcf_destroy(b);
                 }
             }
         } else {
@@ -518,7 +518,6 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
 
     threads = calloc(conf->num_threads, sizeof(pthread_t));
     for (i = 0; i < conf->num_threads; i++) {
-        bcf_callaux_t *bca = 0;
         int j;
         void *rghash = 0;
 
@@ -569,12 +568,16 @@ static int mpileup(mplp_conf_t *conf, int n, char **fn)
         kernel_args->max_indel_depth = max_indel_depth;
         kernel_args->rghash = rghash;
 
-        pthread_create(&threads[i], NULL, mpileup_kern, (void *) kernel_args);
+        pthread_create(&threads[i], NULL, mpileup_kern, kernel_args);
 
 	}
 
     for (i = 0; i < conf->num_threads; ++i) {
         pthread_join(threads[i], NULL);
+    }
+
+    if (conf->flag & MPLP_GLF) {
+        bcf_write_queue_destroy(bp, bh);
     }
 
 	bcf_close(bp);
@@ -769,9 +772,9 @@ int bam_mpileup(int argc, char *argv[])
 		return 1;
 	}
 	bam_no_B = 1;
-	int group_divider (char* filename, int threads, char*** beds);	//БДЫЩЬ!
+    int group_divider (char* filename, int threads, char*** beds);
 	if (mplp.num_threads>1) {
-			char** beds;
+            char** beds = NULL;
 			int bednum = group_divider(mplp.fai_fname,mplp.num_threads,&beds);
 			fprintf (stderr,"Having %d BEDs\n",bednum);
 			mplp.bed_list = malloc (sizeof(void*) * bednum+1);

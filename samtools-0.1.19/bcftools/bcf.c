@@ -1,8 +1,15 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <pthread.h>
 #include "kstring.h"
 #include "bcf.h"
+
+#define BUF_SIZE 1000
+
+static bcf1_t **b_buf = NULL;
+static int buf_head = 0;
+static int buf_tail = 0;
 
 bcf_t *bcf_open(const char *fn, const char *mode)
 {
@@ -151,21 +158,68 @@ int bcf_sync(bcf1_t *b)
 	return 0;
 }
 
+int bcf_write_queue(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b)
+{
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static pthread_mutex_t buf_lock = PTHREAD_MUTEX_INITIALIZER;
+    if (b == NULL) {
+        return 0;
+    }
+    if (pthread_mutex_trylock(&lock) == 0) {
+        int i = buf_tail;
+        int end = buf_head;
+        while(i != end) {
+            bcf_write(bp, h, b_buf[i]);
+            bcf_destroy(b_buf[i]);
+            i = (i < BUF_SIZE - 1) ? i + 1 : 0;
+        }
+        bcf_write(bp, h, b);
+        bcf_destroy(b);
+        pthread_mutex_lock(&buf_lock);
+        buf_tail = end;
+        pthread_mutex_unlock(&buf_lock);
+        pthread_mutex_unlock(&lock);
+    } else {
+        pthread_mutex_lock(&buf_lock);
+        if (b_buf == NULL) {
+            b_buf = calloc(BUF_SIZE, sizeof(bcf1_t *));
+        }
+        b_buf[buf_head] = b;
+        buf_head = (buf_head < BUF_SIZE - 1) ? buf_head + 1 : 0;
+//        while(buf_head == buf_tail);
+        pthread_mutex_unlock(&buf_lock);
+    }
+    return 0;
+}
+
+int bcf_write_queue_destroy(bcf_t *bp, const bcf_hdr_t *h) {
+    int i = 0;
+    if (b_buf == NULL) {
+        return 0;
+    }
+    for (i = 0; i < buf_head; ++i) {
+        bcf_write(bp, h, b_buf[i]);
+        bcf_destroy(b_buf[i]);
+    }
+    free(b_buf);
+    return 0;
+}
+
 int bcf_write(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b)
 {
-	int i, l = 0;
+    int i, l = 0;
 	if (b == 0) return -1;
-	bgzf_write(bp->fp, &b->tid, 4);
-	bgzf_write(bp->fp, &b->pos, 4);
-	bgzf_write(bp->fp, &b->qual, 4);
-	bgzf_write(bp->fp, &b->l_str, 4);
-	bgzf_write(bp->fp, b->str, b->l_str);
-	l = 12 + b->l_str;
-	for (i = 0; i < b->n_gi; ++i) {
-		bgzf_write(bp->fp, b->gi[i].data, b->gi[i].len * h->n_smpl);
-		l += b->gi[i].len * h->n_smpl;
-	}
-	return l;
+    bgzf_write(bp->fp, &b->tid, 4);
+    bgzf_write(bp->fp, &b->pos, 4);
+    bgzf_write(bp->fp, &b->qual, 4);
+    bgzf_write(bp->fp, &b->l_str, 4);
+    bgzf_write(bp->fp, b->str, b->l_str);
+    l = 12 + b->l_str;
+    for (i = 0; i < b->n_gi; ++i) {
+        bgzf_write(bp->fp, b->gi[i].data, b->gi[i].len * h->n_smpl);
+        l += b->gi[i].len * h->n_smpl;
+    }
+    return l;
 }
 
 int bcf_read(bcf_t *bp, const bcf_hdr_t *h, bcf1_t *b)
