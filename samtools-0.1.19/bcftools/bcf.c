@@ -193,13 +193,14 @@ int bcf_write_queue(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b)
 }
 
 int bcf_write_queue_destroy(bcf_t *bp, const bcf_hdr_t *h) {
-    int i = 0;
     if (b_buf == NULL) {
         return 0;
     }
-    for (i = 0; i < buf_head; ++i) {
+    int i = buf_tail;
+    while(i != buf_head) {
         bcf_write(bp, h, b_buf[i]);
         bcf_destroy(b_buf[i]);
+        i = (i < BUF_SIZE - 1) ? i + 1 : 0;
     }
     free(b_buf);
     return 0;
