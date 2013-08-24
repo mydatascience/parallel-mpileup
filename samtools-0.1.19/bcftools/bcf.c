@@ -5,11 +5,12 @@
 #include "kstring.h"
 #include "bcf.h"
 
-#define BUF_SIZE 1000
+#define BUF_SIZE 10000
 
 static bcf1_t **b_buf = NULL;
 static int buf_head = 0;
 static int buf_tail = 0;
+static char buf_is_full = 0;
 
 bcf_t *bcf_open(const char *fn, const char *mode)
 {
@@ -162,6 +163,7 @@ int bcf_write_queue(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b)
 {
     static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
     static pthread_mutex_t buf_lock = PTHREAD_MUTEX_INITIALIZER;
+    static pthread_cond_t buf_not_full;
     if (b == NULL) {
         return 0;
     }
@@ -177,16 +179,26 @@ int bcf_write_queue(bcf_t *bp, const bcf_hdr_t *h, const bcf1_t *b)
         bcf_destroy(b);
         pthread_mutex_lock(&buf_lock);
         buf_tail = end;
+        if (buf_is_full) {
+            pthread_cond_broadcast(&buf_not_full);
+        }
+        buf_is_full = 0;
         pthread_mutex_unlock(&buf_lock);
         pthread_mutex_unlock(&lock);
     } else {
         pthread_mutex_lock(&buf_lock);
+        while(buf_is_full) {
+            pthread_cond_wait(&buf_not_full, &buf_lock);
+        }
         if (b_buf == NULL) {
             b_buf = calloc(BUF_SIZE, sizeof(bcf1_t *));
         }
         b_buf[buf_head] = b;
         buf_head = (buf_head < BUF_SIZE - 1) ? buf_head + 1 : 0;
-//        while(buf_head == buf_tail);
+        if (buf_head == buf_tail) {
+            buf_is_full = 1;
+            fprintf(stderr, "a\n");
+        }
         pthread_mutex_unlock(&buf_lock);
     }
     return 0;
