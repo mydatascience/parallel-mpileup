@@ -910,8 +910,6 @@ int bam_mpileup(int argc, char *argv[])
     } else
     {
 		mpileup(&mplp, argc - optind, argv + optind);
-		for (c=0; c<nfiles; c++) free(fn[c]);
-		free(fn);
 	 }
 	 
 	 
